@@ -1,0 +1,1 @@
+python eval/select_data.py --data_dir StorageFurniture_128/2024-11-05_19-28-28/data --output_dir . --select_num 100
