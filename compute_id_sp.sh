@@ -15,10 +15,46 @@
 #     --N_pcl 4096 \
 #     --world_size 4
 
+# python eval/instantiation_distance_sp.py \
+#     --gt_dir StorageFurniture_768/gt/data_gt \
+#     --data_dir StorageFurniture_768/2024-11-09_15-42-37/data \
+#     --output_dir StorageFurniture_768/2024-11-09_15-42-37/eval_output \
+#     --sample_file_path eval/selected_files.json \
+#     --N_states 10 \
+#     --N_pcl 4096 \
+#     --world_size 4
+
+# python eval/instantiation_distance_sp.py \
+#     --gt_dir StorageFurniture_768/gt/data_gt \
+#     --data_dir 6_ours_obj_dats \
+#     --output_dir output/ours \
+#     --sample_file_path eval/selected_files.json \
+#     --N_states 10 \
+#     --N_pcl 4096 \
+#     --world_size 4
+
+# python eval/instantiation_distance_sp.py \
+#     --gt_dir StorageFurniture_768/gt/data_gt \
+#     --data_dir noshapeprior \
+#     --output_dir output/noshapeprior \
+#     --sample_file_path eval/selected_files.json \
+#     --N_states 10 \
+#     --N_pcl 4096 \
+#     --world_size 4
+
+# python eval/instantiation_distance_sp.py \
+#     --gt_dir StorageFurniture_768/gt/data_gt \
+#     --data_dir notpe \
+#     --output_dir output/notpe \
+#     --sample_file_path eval/selected_files.json \
+#     --N_states 10 \
+#     --N_pcl 4096 \
+#     --world_size 4
+
 python eval/instantiation_distance_sp.py \
     --gt_dir StorageFurniture_768/gt/data_gt \
-    --data_dir StorageFurniture_768/2024-11-09_15-42-37/data \
-    --output_dir StorageFurniture_768/2024-11-09_15-42-37/eval_output \
+    --data_dir cage \
+    --output_dir output/cage \
     --sample_file_path eval/selected_files.json \
     --N_states 10 \
     --N_pcl 4096 \

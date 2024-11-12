@@ -18,7 +18,7 @@ os.environ["MASTER_PORT"] = "12355"
 
 from pytorch3d.loss import chamfer_distance
 # from tqdm import tqdm
-from utils import get_trans_matrix, apply_transformations, sample_object, remove_useless_keys
+from utils import get_trans_matrix, apply_transformations, sample_object, remove_useless_keys, sample_pcl_for_each_part
 
 def sample_random_pose(obj: list, n_sample: int) -> list:
     """
@@ -45,6 +45,23 @@ def sample_random_pose(obj: list, n_sample: int) -> list:
                 P_dict[node_id][i] = P_dict[fa[node_id]][i] @ P_dict[node_id][i]
     return
 
+def fix_pose(obj, N_states, N_pcl, device):
+    # apply transformation and merge all parts, result shape: [N_states, N_pcl, 3]
+    x_list = []
+    for state_id in range(N_states):
+        x = []
+        for part in obj:
+            pp = torch.tensor(part['points'][:, :3], device=device)
+            x.append(apply_transformations(pp, part['poses'][state_id]))
+        x = torch.cat(x, dim=0).to(device) # [len(obj)*N_pcl, 3]
+        # assert x.shape[0] >= N_pcl, f"object has less points {x.shape[0]} than N_pcl={N_pcl}"
+        # randomly sample N_pcl points
+        idx = torch.randperm(x.shape[0])[:N_pcl]
+        x_list.append(x[idx])
+    x_list = torch.stack(x_list, dim=0)  # N_states, N_pcl, 3
+    ###########
+    return x_list
+
 @torch.no_grad()
 def compute_instantiation_distance_pair(
     x1_list, x2_list, device=torch.device("cuda:0"), N_states=10, N_pcl=2048
@@ -70,23 +87,6 @@ def compute_instantiation_distance_pair(
     # gather them in correct way
     return float(distance.cpu().numpy())
 
-def fix_pose(obj, N_states, N_pcl, device):
-    # apply transformation and merge all parts, result shape: [N_states, N_pcl, 3]
-    x_list = []
-    for state_id in range(N_states):
-        x = []
-        for part in obj:
-            pp = torch.tensor(part['points'][:, :3], device=device)
-            x.append(apply_transformations(pp, part['poses'][state_id]))
-        x = torch.cat(x, dim=0).to(device) # [N_pcl, 3]
-        # assert x.shape[0] >= N_pcl, f"object has less points {x.shape[0]} than N_pcl={N_pcl}"
-        # randomly sample N_pcl points
-        idx = torch.randperm(x.shape[0])[:N_pcl]
-        x_list.append(x[idx])
-    x_list = torch.stack(x_list, dim=0)  # N_states, N_pcl, 3
-    ###########
-    return x_list
-
 def compute_D_matrix(rank, world_size, in_dir, gt_dir, save_dir, N_states=10, N_pcl=2048, sample_file:dict=None):
     """
     compute the D matrix: instantiation distance between each pair of (in_obj, gt)
@@ -103,6 +103,11 @@ def compute_D_matrix(rank, world_size, in_dir, gt_dir, save_dir, N_states=10, N_
     if sample_file is not None:
         sample_object(in_fn_list, sample_file)
         sample_object(gt_fn_list, sample_file)
+        if len(in_fn_list) != len(gt_fn_list):
+            if len(in_fn_list) > len(gt_fn_list):
+                raise NotImplementedError("in_fn_list > gt_fn_list")
+            else:
+                sample_object(gt_fn_list, {"fn_list": in_fn_list})
         print(f"{rank}: sampled {len(in_fn_list)} in-objects, {len(gt_fn_list)} ground truth objects.")
     N_in, N_gt = len(in_fn_list), len(gt_fn_list)
 
@@ -119,12 +124,14 @@ def compute_D_matrix(rank, world_size, in_dir, gt_dir, save_dir, N_states=10, N_
         fn = osp.join(in_dir, in_fn_list[i])
         data = pickle.load(open(fn, "rb"))
         remove_useless_keys(data)
+        sample_pcl_for_each_part(data, N_pcl)
         DATA_IN.append(data)
     print(f"{rank}: caching ground truth ...")
     for i in range(N_gt):
         fn = osp.join(gt_dir, gt_fn_list[i])
         data = pickle.load(open(fn, "rb"))
         remove_useless_keys(data)
+        sample_pcl_for_each_part(data, N_pcl)
         DATA_GT.append(data)
     ###########
 

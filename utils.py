@@ -134,6 +134,7 @@ def eval_ID(root_dir, gen_name, ref_name, N_states=10, N_pcl=2048):
     M_rs = torch.from_numpy(np.load(rs_fn)["D"])
     M_rr = torch.from_numpy(np.load(rr_fn)["D"])
     M_ss = torch.from_numpy(np.load(ss_fn)["D"])
+    print(M_rs[:5,:5])
     ret = lgan_mmd_cov(M_rs.t())
     results.update({
         "%s-ID" % k: v for k, v in ret.items()
@@ -210,6 +211,11 @@ def get_trans_matrix(part_dict, ratio):
     calcutate 4*4 SE(3) transformation matrix
     ratio: float within [0, 1.0], corresponding to the translation ratio
     """
+    # if limit == [0, 0, 0, 0] then the part is fixed
+    eps = 1e-6
+    if part_dict['limit'][1] - part_dict['limit'][0] <= eps and part_dict['limit'][3] - part_dict['limit'][2] <= eps:
+        return torch.eye(4, **ten_def)
+
     distance = calc_linear_value(*part_dict['limit'][:2], ratio)
     Mt = produce_translate_matrix(part_dict['joint_data_direction'], distance)
 
@@ -238,7 +244,7 @@ def prepare_trans_matrix(obj, ratio):
     keys = list(M_dict.keys())
     keys.sort()
     for cur_id in keys:
-        if cur_id != 0:
+        if cur_id != 0 and fa[cur_id] in M_dict:
             M_dict[cur_id] = M_dict[cur_id] @ M_dict[fa[cur_id]]
             assert fa[cur_id] != cur_id
     return M_dict
@@ -343,11 +349,9 @@ def POR(obj, n_sample=None, n_states=10, conf_T=1.5):
         ]
         """
 
-
     # print("sampling points")
     for part in obj:
         part['points'] = torch.tensor(part['points'], device=device)
-
         if n_sample is not None:
             index = torch.randperm(part['points'].shape[0], device=device)[:n_sample]
             part['points'] = part['points'][index]
@@ -376,6 +380,7 @@ def POR(obj, n_sample=None, n_states=10, conf_T=1.5):
             results.append(torch.tensor(ious).mean())
 
     if len(results) == 0:
+        print("warning: no valid iou value is computed.")
         return None, None
 
     return torch.tensor(results).mean(), torch.tensor(results).max()
@@ -391,6 +396,9 @@ def sample_object(fn_list_to_process, sample_file):
     assert len(fn_list_to_process) <= len(fn_list)
     if len(fn_list_to_process) < len(fn_list):
         print(f"warning: {len(fn_list) - len(fn_list_to_process)} objects are not found in data_dir.")
+        for name in fn_list:
+            if name not in fn_list_to_process:
+                print(name)
     # if len(fn_list_to_process) > len(fn_list):
     #     print(f"warning: {len(fn_list_to_process) - len(fn_list)} objects are not found in sample_file.")
 
@@ -399,3 +407,44 @@ def remove_useless_keys(obj, useless_keys = ['mesh', 'shape_code']):
         for key in useless_keys:
             if key in part:
                 del part[key]
+
+def align_part_keys(obj):
+    for part in obj:
+        if 'bbx' in part:
+            part['bbox_center'], part['bbox_l'] = part['bbx']
+            del part['bbx']
+
+def sample_pcl_for_each_part(obj, N_pcl):
+    for part in obj:
+        raw_points = part['points']
+        if raw_points.shape[0] > N_pcl:
+            index = torch.randperm(raw_points.shape[0], device=device)[:N_pcl].tolist()
+            part['points'] = raw_points[index]
+
+def repair_dfn(obj):
+    cur_dfs_num = 0
+    def dfs(cur_part, fa_dfn, obj):
+        nonlocal cur_dfs_num
+        cur_part['Rdfn'] = cur_dfs_num
+        cur_part['Rdfn_fa'] = fa_dfn
+        cur_dfs_num += 1
+
+        for part in obj:
+            if part['dfn_fa'] == cur_part['dfn']:
+                dfs(part, cur_part['Rdfn'], obj)
+    
+    root = None
+    for part in obj:
+        if part['dfn_fa'] == -1:
+            if root is not None:
+                raise ValueError("Multiple root parts detected.")
+            root = part
+    if root is None:
+        raise ValueError("No root part detected.")
+    dfs(root, -1, obj)
+
+    for part in obj:
+        part['dfn'] = part['Rdfn']
+        part['dfn_fa'] = part['Rdfn_fa']
+        del part['Rdfn']
+        del part['Rdfn_fa']
